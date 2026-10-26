@@ -169,6 +169,11 @@ def rewrite_so_dependencies(src_path, new_name):
                 replace_args.extend(["--replace-needed", old, new])
 
     out = BUILD / new_name
+    if out.resolve() == Path(src_path).resolve():
+        # Source is already in BUILD/ under the target name; work on a temp copy.
+        tmp = BUILD / (new_name + ".patchelf")
+        shutil.copy2(src_path, tmp)
+        src_path = tmp
     shutil.copy2(src_path, out)
     cmd = ["patchelf", "--set-soname", new_name, *replace_args, str(out)]
     if replace_args:
