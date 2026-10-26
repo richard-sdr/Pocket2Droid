@@ -128,7 +128,7 @@ jobs:
         # the whole step. We only fail at the very end if we got nothing.
         set +eo pipefail
 
-        PACKAGES=(glib libpixman libslirp libxml2 libiconv libffi liblz4 pcre2 zlib)
+        PACKAGES=(glib libpixman libslirp libxml2 libiconv libffi liblz4 pcre2 zlib libandroid-support)
         extracted=0
         for pkg in "${PACKAGES[@]}"; do
           echo "--- $pkg ---"
