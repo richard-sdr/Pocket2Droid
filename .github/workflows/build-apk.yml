@@ -180,6 +180,13 @@ jobs:
         NDK="${{ env.NDK_HOME }}"
         SYSROOT="${{ env.SYSROOT }}"
 
+        # Put NDK llvm toolchain on PATH so configure's --cross-prefix=llvm-
+        # can find llvm-ar, llvm-strip, llvm-objcopy, etc.
+        export PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+        echo "llvm-ar:      $(command -v llvm-ar || echo NOT FOUND)"
+        echo "llvm-strip:   $(command -v llvm-strip || echo NOT FOUND)"
+        echo "llvm-objcopy: $(command -v llvm-objcopy || echo NOT FOUND)"
+
         CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
         CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
 
