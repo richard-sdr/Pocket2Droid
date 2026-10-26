@@ -112,7 +112,6 @@ jobs:
         TERMUX_POOL="https://packages.termux.dev/apt/termux-main/pool/main"
 
         echo "=== Fetching Termux package index ==="
-        # Use wget with retry instead of curl -sL | gunzip (pipefail hides curl errors)
         for i in 1 2 3; do
           if wget -q --timeout=30 -O /tmp/termux-Packages.gz \
               "https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz"; then
@@ -124,33 +123,52 @@ jobs:
         gunzip -c /tmp/termux-Packages.gz > /tmp/termux-Packages.txt
         echo "Index downloaded: $(wc -l < /tmp/termux-Packages.txt) lines"
 
-        resolve_pkg() {
-          local name="$1"
-          grep -A 2 "^Package: ${name}$" /tmp/termux-Packages.txt \
-            | grep "^Filename:" | head -1 | sed 's/^Filename: //'
-        }
+        # Use a subshell WITHOUT pipefail for the extraction loop so that
+        # grep non-match (exit 1) or a single failed download does NOT abort
+        # the whole step. We only fail at the very end if we got nothing.
+        set +eo pipefail
 
-        # Termux package names (must match exactly)
         PACKAGES=(glib libpixman libslirp libxml2 libiconv libffi liblz4)
+        extracted=0
         for pkg in "${PACKAGES[@]}"; do
-          FILE=$(resolve_pkg "$pkg")
-          if [ -z "$FILE" ]; then
+          echo "--- $pkg ---"
+          # grep -A 2 "^Package: $pkg$" exits 1 when no match → suppress
+          section=$(grep -A 2 "^Package: ${pkg}$" /tmp/termux-Packages.txt || true)
+          if [ -z "$section" ]; then
             echo "WARN: $pkg not found in Termux index — skipping"
+            continue
+          fi
+          FILE=$(echo "$section" | grep "^Filename:" | head -1 | sed 's/^Filename: //')
+          if [ -z "$FILE" ]; then
+            echo "WARN: $pkg has no Filename in index — skipping"
             continue
           fi
           URL="$TERMUX_POOL/$FILE"
           DEB="/tmp/$(basename "$FILE")"
-          echo "Fetching $pkg → $URL"
-          wget -q --timeout=30 -O "$DEB" "$URL" || { echo "FAIL downloading $pkg"; continue; }
-          dpkg-deb -x "$DEB" "$SYSROOT"
-          echo "  ✓ extracted $pkg"
+          echo "Downloading $pkg → $URL"
+          if wget --timeout=30 -O "$DEB" "$URL" 2>&1; then
+            dpkg-deb -x "$DEB" "$SYSROOT"
+            echo "  ✓ extracted $pkg"
+            extracted=$((extracted + 1))
+          else
+            echo "  ✗ download failed for $pkg"
+          fi
         done
 
+        set -eo pipefail
+
         echo ""
-        echo "=== Verify sysroot contents ==="
-        find "$SYSROOT" -name "glib.h" 2>/dev/null | head -3
-        find "$SYSROOT" -name "pixman.h" 2>/dev/null | head -3
-        find "$SYSROOT" -name "libslirp*" 2>/dev/null | head -3
+        echo "=== Summary: $extracted packages extracted ==="
+        if [ "$extracted" -eq 0 ]; then
+          echo "ERROR: nothing extracted — Termux index or downloads broken"
+          exit 1
+        fi
+
+        echo ""
+        echo "=== Verify sysroot ==="
+        find "$SYSROOT" -name "glib.h" 2>/dev/null | head -3 || true
+        find "$SYSROOT" -name "pixman.h" 2>/dev/null | head -3 || true
+        find "$SYSROOT" -name "libslirp*" 2>/dev/null | head -3 || true
 
     # ================================================================
     # Step 7: Build QEMU → libp2dengine.so
