@@ -97,14 +97,22 @@ if not engine.exists():
     print(f"ERROR: native engine missing at {engine}", file=sys.stderr)
     sys.exit(1)
 
-with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
-    z.write(engine, "lib/arm64-v8a/libp2dengine.so")
+def add_executable_so(apk_path, src_path, zip_path):
+    """Add a native shared library with executable permissions (0755)."""
+    data = Path(src_path).read_bytes()
+    with zipfile.ZipFile(apk_path, "a", zipfile.ZIP_STORED) as z:
+        if zip_path in z.namelist():
+            return
+        info = zipfile.ZipInfo(zip_path, date_time=(2026, 10, 8, 12, 0, 0))
+        info.external_attr = 0o100755 << 16
+        z.writestr(info, data)
+
+add_executable_so(unsigned, engine, "lib/arm64-v8a/libp2dengine.so")
 
 # Storage helper JNI SO (required by StoragePublish class on first load)
 storage_so = BUILD / "libp2dstorage.so"
 if storage_so.exists():
-    with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
-        z.write(storage_so, "lib/arm64-v8a/libp2dstorage.so")
+    add_executable_so(unsigned, storage_so, "lib/arm64-v8a/libp2dstorage.so")
 else:
     print(f"ERROR: native storage helper missing at {storage_so}", file=sys.stderr)
     sys.exit(1)
@@ -118,9 +126,33 @@ SONAME_KEEP = [
     "libz", "libandroid-support", "libdl", "liblog",
 ]
 
+# Map a real file name to the canonical SONAME the Android linker looks for.
+# This is a safety net in case readelf is unavailable in the CI image.
+FALLBACK_SONAME = {
+    "libz.so": "libz.so.1",
+    "libz.so.1": "libz.so.1",
+    "libglib-2.0.so": "libglib-2.0.so.0",
+    "libglib-2.0.so.0": "libglib-2.0.so.0",
+    "libpixman-1.so": "libpixman-1.so.0",
+    "libpixman-1.so.0": "libpixman-1.so.0",
+    "libslirp.so": "libslirp.so.0",
+    "libslirp.so.0": "libslirp.so.0",
+    "libxml2.so": "libxml2.so.2",
+    "libxml2.so.2": "libxml2.so.2",
+    "libpcre2-8.so": "libpcre2-8.so.0",
+    "libpcre2-8.so.0": "libpcre2-8.so.0",
+    "liblz4.so": "liblz4.so.1",
+    "liblz4.so.1": "liblz4.so.1",
+    "libiconv.so": "libiconv.so",
+    "libandroid-support.so": "libandroid-support.so",
+    "libffi.so": "libffi.so",
+    "libffi.so.8": "libffi.so.8",
+}
+
 def soname_of(path):
     try:
-        out = subprocess.check_output(["readelf", "-d", str(path)], text=True)
+        out = subprocess.check_output(["readelf", "-d", str(path)], text=True,
+                                      stderr=subprocess.DEVNULL)
         for line in out.splitlines():
             if "SONAME" in line:
                 # line looks like: 0x000000000000000e (SONAME) Library soname: [libfoo.so.0]
@@ -131,6 +163,14 @@ def soname_of(path):
     except Exception:
         pass
     return None
+
+def canonical_soname(path):
+    """Return the SONAME the Android linker will search for."""
+    # Prefer the ELF header, fall back to filename-derived mapping.
+    soname = soname_of(path)
+    if soname:
+        return soname
+    return FALLBACK_SONAME.get(path.name, path.name)
 
 if SYSROOT:
     for termux_usr in [SYSROOT / "data/data/com.termux/files/usr", SYSROOT]:
@@ -149,21 +189,17 @@ if SYSROOT:
                 continue
             if not any(k in so.name for k in SONAME_KEEP):
                 continue
-            soname = soname_of(so) or so.name
+            soname = canonical_soname(so)
             # Prefer the most version-specific real file for a given SONAME.
             existing = soname_files.get(soname)
             if existing is None or len(so.name) > len(existing.name):
                 soname_files[soname] = so
 
         bundled = 0
-        with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
-            existing_names = set(z.namelist())
-            for soname, so in sorted(soname_files.items()):
-                zip_path = f"lib/arm64-v8a/{soname}"
-                if zip_path in existing_names:
-                    continue
-                z.write(so, zip_path)
-                bundled += 1
+        for soname, so in sorted(soname_files.items()):
+            zip_path = f"lib/arm64-v8a/{soname}"
+            add_executable_so(unsigned, so, zip_path)
+            bundled += 1
         if bundled:
             print(f"Bundled {bundled} Termux runtime .so files from {libdir}")
             print("   " + " ".join(sorted(soname_files.keys())))
