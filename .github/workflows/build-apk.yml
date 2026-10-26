@@ -255,6 +255,13 @@ jobs:
         mkdir -p "${GITHUB_WORKSPACE}/android/build"
         cp qemu-system-arm "${GITHUB_WORKSPACE}/android/build/libp2dengine.so"
         file "${GITHUB_WORKSPACE}/android/build/libp2dengine.so"
+
+        echo "=== Building libp2dstorage.so ==="
+        "$CC" -shared -fPIC -O2 \
+          -I"$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include" \
+          "${GITHUB_WORKSPACE}/android/native/storage_publish.c" \
+          -o "${GITHUB_WORKSPACE}/android/build/libp2dstorage.so"
+        file "${GITHUB_WORKSPACE}/android/build/libp2dstorage.so"
         echo "✓ QEMU engine built"
 
     # ================================================================

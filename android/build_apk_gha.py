@@ -78,6 +78,15 @@ if not engine.exists():
 with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
     z.write(engine, "lib/arm64-v8a/libp2dengine.so")
 
+# Storage helper JNI SO (required by StoragePublish class on first load)
+storage_so = BUILD / "libp2dstorage.so"
+if storage_so.exists():
+    with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
+        z.write(storage_so, "lib/arm64-v8a/libp2dstorage.so")
+else:
+    print(f"ERROR: native storage helper missing at {storage_so}", file=sys.stderr)
+    sys.exit(1)
+
 # If we have Termux-sysroot .so files, bundle them too.
 # The Android linker needs them at runtime if QEMU was dynamically linked.
 if SYSROOT:
