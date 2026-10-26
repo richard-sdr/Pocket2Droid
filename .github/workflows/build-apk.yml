@@ -72,14 +72,14 @@ jobs:
         sdkmanager \
           "platforms;android-36" \
           "build-tools;34.0.0" \
-          "ndk;30.2.6722718"
+          "ndk;30.0.16248370"
 
         echo ""
         echo "=== Verification ==="
         ls "$ANDROID_HOME/platforms/android-36/android.jar"
         ls "$ANDROID_HOME/build-tools/34.0.0/zipalign"
         ls "$ANDROID_HOME/build-tools/34.0.0/apksigner"
-        NDK_DIR="$ANDROID_HOME/ndk/30.2.6722718"
+        NDK_DIR="$ANDROID_HOME/ndk/30.0.16248370"
         ls "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
 
         echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
