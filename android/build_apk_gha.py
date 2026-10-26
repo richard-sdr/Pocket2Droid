@@ -9,7 +9,7 @@ author's original:
   * Skips LEGACY / BASELINE dependencies — source is complete in the repo
   * Assumes libp2dengine.so is already at android/build/libp2dengine.so
 """
-import hashlib, os, shutil, subprocess, sys, zipfile
+import hashlib, os, re, shutil, subprocess, sys, zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -107,8 +107,6 @@ def add_executable_so(apk_path, src_path, zip_path):
         info.external_attr = 0o100755 << 16
         z.writestr(info, data)
 
-add_executable_so(unsigned, engine, "lib/arm64-v8a/libp2dengine.so")
-
 # Storage helper JNI SO (required by StoragePublish class on first load)
 storage_so = BUILD / "libp2dstorage.so"
 if storage_so.exists():
@@ -117,61 +115,66 @@ else:
     print(f"ERROR: native storage helper missing at {storage_so}", file=sys.stderr)
     sys.exit(1)
 
-# If we have Termux-sysroot .so files, bundle them too.
-# The Android linker needs them at runtime if QEMU was dynamically linked.
-# We install each real library under its SONAME so the dynamic linker finds it.
-SONAME_KEEP = [
-    "libglib", "libpixman", "libslirp", "libxml2",
-    "libiconv", "libffi", "liblz4", "libpcre",
-    "libz", "libandroid-support", "libdl", "liblog",
-]
-
-# Map a real file name to the canonical SONAME the Android linker looks for.
-# This is a safety net in case readelf is unavailable in the CI image.
-FALLBACK_SONAME = {
-    "libz.so": "libz.so.1",
-    "libz.so.1": "libz.so.1",
-    "libglib-2.0.so": "libglib-2.0.so.0",
-    "libglib-2.0.so.0": "libglib-2.0.so.0",
-    "libpixman-1.so": "libpixman-1.so.0",
-    "libpixman-1.so.0": "libpixman-1.so.0",
-    "libslirp.so": "libslirp.so.0",
-    "libslirp.so.0": "libslirp.so.0",
-    "libxml2.so": "libxml2.so.2",
-    "libxml2.so.2": "libxml2.so.2",
-    "libpcre2-8.so": "libpcre2-8.so.0",
-    "libpcre2-8.so.0": "libpcre2-8.so.0",
-    "liblz4.so": "liblz4.so.1",
-    "liblz4.so.1": "liblz4.so.1",
-    "libiconv.so": "libiconv.so",
-    "libandroid-support.so": "libandroid-support.so",
-    "libffi.so": "libffi.so",
-    "libffi.so.8": "libffi.so.8",
+# Termux dependencies use SONAMEs with version suffixes (e.g. libglib-2.0.so.0).
+# Android's package manager only extracts libraries whose names match lib*.so,
+# so we rename them to NDK-friendly forms and rewrite the engine's DT_NEEDED
+# entries with patchelf.
+NDK_NAMES = {
+    "libglib-2.0.so.0":   "libglib_2_0.so",
+    "libpixman-1.so.0":   "libpixman_1.so",
+    "libslirp.so.0":      "libslirp.so",
+    "libxml2.so.2":       "libxml2.so",
+    "libxml2.so.16":      "libxml2.so",
+    "libz.so.1":          "libz.so",
+    "libandroid-support.so": "libandroid_support.so",
+    "liblz4.so.1":        "liblz4.so",
+    "libpcre2-8.so.0":    "libpcre2_8.so",
+    "libiconv.so":        "libiconv.so",
+    "libffi.so.8":        "libffi.so",
 }
 
-def soname_of(path):
+REQUIRED_KEYS = set(NDK_NAMES) | {
+    "libpixman-1.so", "libslirp.so", "libxml2.so", "libpcre2-8.so",
+    "libiconv.so", "libffi.so", "liblz4.so", "libz.so",
+    "libandroid-support.so",
+}
+
+def readelf_sonames(path):
+    """Return the list of DT_NEEDED library names for an ELF shared object."""
     try:
         out = subprocess.check_output(["readelf", "-d", str(path)], text=True,
                                       stderr=subprocess.DEVNULL)
+        needed = []
         for line in out.splitlines():
-            if "SONAME" in line:
-                # line looks like: 0x000000000000000e (SONAME) Library soname: [libfoo.so.0]
-                start = line.find("[")
-                end = line.find("]", start)
-                if start != -1 and end != -1:
-                    return line[start + 1:end]
-    except Exception:
-        pass
-    return None
+            if "(NEEDED)" in line and "Shared library:" in line:
+                m = re.search(r"\[([^\]]+)\]", line)
+                if m:
+                    needed.append(m.group(1))
+        return needed
+    except Exception as e:
+        print(f"WARN: readelf failed for {path}: {e}", file=sys.stderr)
+        return []
 
-def canonical_soname(path):
-    """Return the SONAME the Android linker will search for."""
-    # Prefer the ELF header, fall back to filename-derived mapping.
-    soname = soname_of(path)
-    if soname:
-        return soname
-    return FALLBACK_SONAME.get(path.name, path.name)
+def rename_engine_dependencies(engine_path, libdir):
+    """Create a patched engine with NDK-friendly DT_NEEDED names."""
+    needed = readelf_sonames(engine_path)
+    replace_args = []
+    for old in needed:
+        if old in NDK_NAMES:
+            new = NDK_NAMES[old]
+            if old != new:
+                replace_args.extend(["--replace-needed", old, new])
+    if not replace_args:
+        return engine_path
+    patched = BUILD / "libp2dengine-patched.so"
+    shutil.copy2(engine_path, patched)
+    cmd = ["patchelf", *replace_args, str(patched)]
+    print("$", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    return patched
 
+# Locate Termux sysroot libs and map canonical SONAME -> real file.
+soname_files = {}
 if SYSROOT:
     for termux_usr in [SYSROOT / "data/data/com.termux/files/usr", SYSROOT]:
         if not termux_usr.is_dir():
@@ -180,30 +183,51 @@ if SYSROOT:
         if not libdir.is_dir():
             continue
 
-        # Collect real files only; skip symlinks. Map SONAME -> best real file.
-        soname_files = {}
+        def soname_of(path):
+            try:
+                out = subprocess.check_output(["readelf", "-d", str(path)],
+                                              text=True, stderr=subprocess.DEVNULL)
+                for line in out.splitlines():
+                    if "SONAME" in line:
+                        m = re.search(r"\[([^\]]+)\]", line)
+                        if m:
+                            return m.group(1)
+            except Exception:
+                pass
+            return None
+
         for so in libdir.glob("*.so*"):
             if so.is_symlink():
                 continue
             if "libp2dengine" in so.name:
                 continue
-            if not any(k in so.name for k in SONAME_KEEP):
+            if not any(k in so.name for k in REQUIRED_KEYS):
                 continue
-            soname = canonical_soname(so)
-            # Prefer the most version-specific real file for a given SONAME.
+            soname = soname_of(so)
+            if not soname:
+                continue
             existing = soname_files.get(soname)
             if existing is None or len(so.name) > len(existing.name):
                 soname_files[soname] = so
-
-        bundled = 0
-        for soname, so in sorted(soname_files.items()):
-            zip_path = f"lib/arm64-v8a/{soname}"
-            add_executable_so(unsigned, so, zip_path)
-            bundled += 1
-        if bundled:
-            print(f"Bundled {bundled} Termux runtime .so files from {libdir}")
-            print("   " + " ".join(sorted(soname_files.keys())))
         break
+
+# Patch engine to reference the NDK-friendly names.
+patched_engine = rename_engine_dependencies(engine, None)
+add_executable_so(unsigned, patched_engine, "lib/arm64-v8a/libp2dengine.so")
+
+# Bundle dependencies under NDK-friendly names so Android extracts them.
+bundled = 0
+for soname, so in sorted(soname_files.items()):
+    ndk_name = NDK_NAMES.get(soname)
+    if not ndk_name:
+        print(f"WARN: no NDK-friendly mapping for {soname}; skipping", file=sys.stderr)
+        continue
+    zip_path = f"lib/arm64-v8a/{ndk_name}"
+    add_executable_so(unsigned, so, zip_path)
+    bundled += 1
+if bundled:
+    print(f"Bundled {bundled} Termux runtime .so files")
+    print("   " + " ".join(sorted(NDK_NAMES.get(s, s) for s in soname_files)))
 
 # --- 6. zipalign ---
 aligned = BUILD / "Pocket2Droid-ALIGNED.apk"

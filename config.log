@@ -1,0 +1,10 @@
+# QEMU configure log Mon Oct 26 11:57:47 CST 2026
+# Configured with: './qemu-android-exact/configure' '--help'
+
+#
+cc -c -o config-temp/qemu-conf.o config-temp/qemu-conf.c
+cc -c -o config-temp/qemu-conf.o config-temp/qemu-conf.c
+cc -c -o config-temp/qemu-conf.o config-temp/qemu-conf.c
+config-temp/qemu-conf.c:2:2: error: #error __ILP32__ not defined
+    2 | #error __ILP32__ not defined
+      |  ^~~~~

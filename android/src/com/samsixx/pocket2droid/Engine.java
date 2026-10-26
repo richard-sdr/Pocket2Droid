@@ -2,7 +2,6 @@ package com.samsixx.pocket2droid;
 import android.content.Context;
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
-import android.os.Build;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.*;
@@ -62,67 +61,9 @@ final class Engine {
         this.context = context; layout = paths;
         root = layout.root; rom = layout.rom; cab = layout.cab;
         storage = layout.storage; frames = layout.frames;
-        File runtimeLibDir = ensureRuntimeLibraries(context);
-        executable = new File(runtimeLibDir, "libp2dengine.so").getPath();
+        executable = new File(context.getApplicationInfo().nativeLibraryDir, "libp2dengine.so").getPath();
         status = sink;
         audioStatus = sink;
-    }
-
-    /**
-     * Extract native libraries from the APK into the app's private files/lib
-     * directory. Android's package manager only extracts libraries whose names
-     * look like standard NDK outputs (lib*.so). Termux dependencies such as
-     * libglib-2.0.so.0, libz.so.1 and libandroid-support.so use SONAMEs with
-     * version suffixes and are skipped by the installer. We extract them
-     * ourselves so the engine subprocess can resolve all dependencies.
-     */
-    private static File ensureRuntimeLibraries(Context context) throws RuntimeException {
-        File libDir = new File(context.getFilesDir(), "lib");
-        if (!libDir.isDirectory() && !libDir.mkdirs()) {
-            throw new RuntimeException("Cannot create runtime library directory");
-        }
-        try {
-            extractNativeLibraries(context, libDir);
-        } catch (IOException error) {
-            throw new RuntimeException("Cannot extract runtime libraries", error);
-        }
-        return libDir;
-    }
-
-    private static void extractNativeLibraries(Context context, File libDir) throws IOException {
-        File apkFile = new File(context.getApplicationInfo().sourceDir);
-        String abi = Build.SUPPORTED_ABIS[0];
-        String prefix = "lib/" + abi + "/";
-        byte[] buffer = new byte[65536];
-        boolean changed = false;
-        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(apkFile)) {
-            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
-            while (entries.hasMoreElements()) {
-                java.util.zip.ZipEntry entry = entries.nextElement();
-                String name = entry.getName();
-                if (!name.startsWith(prefix)) continue;
-                String base = name.substring(prefix.length());
-                if (!base.startsWith("lib")) continue;
-                File out = new File(libDir, base);
-                if (out.exists() && out.length() == entry.getSize()) continue;
-                File tmp = new File(libDir, base + ".tmp");
-                try (java.io.InputStream in = zip.getInputStream(entry);
-                     java.io.FileOutputStream fos = new java.io.FileOutputStream(tmp)) {
-                    int n;
-                    while ((n = in.read(buffer)) != -1) fos.write(buffer, 0, n);
-                }
-                if (!tmp.renameTo(out)) {
-                    tmp.delete();
-                    throw new IOException("Cannot install runtime library: " + base);
-                }
-                changed = true;
-            }
-        }
-        if (changed) {
-            for (File f : libDir.listFiles()) {
-                if (f.isFile()) f.setExecutable(true, false);
-            }
-        }
     }
     boolean alive() {
         java.lang.Process p = process;
