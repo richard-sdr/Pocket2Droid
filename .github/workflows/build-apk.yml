@@ -219,15 +219,18 @@ jobs:
 
         rm -rf build-android
 
-        # NO --cross-prefix=llvm- — that makes meson rename pkg-config to
-        # 'llvm-pkg-config' (which NDK doesn't ship). Instead we pass the
-        # binutils tools explicitly via env vars so meson sees them directly.
-        AR="$AR" STRIP="$STRIP" OBJCOPY="$OBJCOPY" \
+        # Use --cross-prefix=llvm- so meson enters cross-build mode (build type
+        # must be "cross build", NOT "native build" — otherwise aarch64 sanity
+        # check binaries won't run on x86_64 CI). Set PKG_CONFIG explicitly so
+        # configure does NOT prefix it with "llvm-" (NDK doesn't ship that).
+        # Other binutils (ar, strip, objcopy, ld, ...) use the same pattern
+        # VAR="${VAR-${cross_prefix}var}" so our env-var overrides win.
+        PKG_CONFIG=/usr/bin/pkg-config AR="$AR" STRIP="$STRIP" OBJCOPY="$OBJCOPY" \
         ./configure \
           --target-list=arm-softmmu \
           --with-devices-arm=p2d \
           --cc="$CC" --cxx="$CXX" \
-          --host-cc=gcc \
+          --host-cc=gcc --cross-prefix="llvm-" \
           --cpu=aarch64 \
           --disable-werror \
           --without-default-features \
