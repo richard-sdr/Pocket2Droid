@@ -133,7 +133,7 @@ jobs:
         for pkg in "${PACKAGES[@]}"; do
           echo "--- $pkg ---"
           # grep -A 2 "^Package: $pkg$" exits 1 when no match → suppress
-          section=$(grep -A 2 "^Package: ${pkg}$" /tmp/termux-Packages.txt || true)
+          section=$(awk "/^Package: ${pkg}$/,/^$/" /tmp/termux-Packages.txt)
           if [ -z "$section" ]; then
             echo "WARN: $pkg not found in Termux index — skipping"
             continue
