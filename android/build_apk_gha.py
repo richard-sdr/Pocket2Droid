@@ -20,7 +20,7 @@ ANDROID_JAR = ANDROID_HOME / "platforms/android-36/android.jar"
 D8_JAR = BUILD_TOOLS / "lib/d8.jar"
 AAPT2 = BUILD_TOOLS / "aapt2"
 ZIPALIGN = BUILD_TOOLS / "zipalign"
-APKSIGNER_JAR = BUILD_TOOLS / "apksigner.jar"
+APKSIGNER = BUILD_TOOLS / "apksigner"
 
 BUILD = HERE / "build"
 (BUILD / "classes").mkdir(parents=True, exist_ok=True)
@@ -126,10 +126,10 @@ if not keystore.exists():
          "-dname", "CN=Android Debug,O=Android,C=US"])
 
 signed = BUILD / "Pocket2Droid-DEBUG.apk"
-run(["java", "-jar", str(APKSIGNER_JAR), "sign",
+run([str(APKSIGNER), "sign",
      "--ks", str(keystore), "--ks-pass", "pass:android",
      "--out", str(signed), str(aligned)])
-run(["java", "-jar", str(APKSIGNER_JAR), "verify", str(signed)])
+run([str(APKSIGNER), "verify", str(signed)])
 
 sha = hashlib.sha256(signed.read_bytes()).hexdigest()
 size_mb = signed.stat().st_size / 1024 / 1024
