@@ -249,9 +249,9 @@ static void touch_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
          * Navigation and digits use the SMDK2410 matrix scan codes defined in
          * Device Emulator's boards/smdk2410/vktoscan.c.
          *
-         * Soft keys map to the SMDK2410 ScanVK entries for VK_APP_LAUNCH1/2:
-         *   left soft key  -> scan code 0x70
-         *   right soft key -> scan code 0x71
+         * Soft keys map to the SMDK2410 matrix scan codes from VKtoSCTable:
+         *   left soft key  -> VK_APP_LAUNCH1 -> scan code 0x64
+         *   right soft key -> VK_APP_LAUNCH2 -> scan code 0x65
          *
          * The original QEMU code sent Fn+digit sequences for F1..F4, but many
          * WM5 ROMs ignore the Fn scan code (0x63) and saw only the inner digit,
@@ -279,8 +279,8 @@ static void touch_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
         case Q_KEY_CODE_7: code = 0x4f; break;
         case Q_KEY_CODE_8: code = 0x57; break;
         case Q_KEY_CODE_9: code = 0x41; break;
-        case Q_KEY_CODE_F1: code = 0x70; break; /* left soft key  -> VK_APP_LAUNCH1 */
-        case Q_KEY_CODE_F2: code = 0x71; break; /* right soft key -> VK_APP_LAUNCH2 */
+        case Q_KEY_CODE_F1: code = 0x64; break; /* left soft key  -> VK_APP_LAUNCH1 */
+        case Q_KEY_CODE_F2: code = 0x65; break; /* right soft key -> VK_APP_LAUNCH2 */
         case Q_KEY_CODE_F3: code = 0x3d; break; /* AT scancode F3 -> guest VK_F3 (talk) */
         case Q_KEY_CODE_F4: code = 0x3e; break; /* AT scancode F4 -> guest VK_F4 (end) */
         case Q_KEY_CODE_F8: code = 0x42; break; /* AT scancode F8 -> guest VK_F8 (*) */
