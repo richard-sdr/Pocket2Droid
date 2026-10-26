@@ -112,8 +112,17 @@ jobs:
         TERMUX_POOL="https://packages.termux.dev/apt/termux-main/pool/main"
 
         echo "=== Fetching Termux package index ==="
-        curl -sL "https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz" \
-          | gunzip > /tmp/termux-Packages.txt
+        # Use wget with retry instead of curl -sL | gunzip (pipefail hides curl errors)
+        for i in 1 2 3; do
+          if wget -q --timeout=30 -O /tmp/termux-Packages.gz \
+              "https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz"; then
+            break
+          fi
+          echo "  wget attempt $i failed, retrying..."
+          sleep 2
+        done
+        gunzip -c /tmp/termux-Packages.gz > /tmp/termux-Packages.txt
+        echo "Index downloaded: $(wc -l < /tmp/termux-Packages.txt) lines"
 
         resolve_pkg() {
           local name="$1"
@@ -121,7 +130,8 @@ jobs:
             | grep "^Filename:" | head -1 | sed 's/^Filename: //'
         }
 
-        PACKAGES=(glib pixman libslirp libxml2 libiconv libffi liblz4)
+        # Termux package names (must match exactly)
+        PACKAGES=(glib libpixman libslirp libxml2 libiconv libffi liblz4)
         for pkg in "${PACKAGES[@]}"; do
           FILE=$(resolve_pkg "$pkg")
           if [ -z "$FILE" ]; then
@@ -130,9 +140,10 @@ jobs:
           fi
           URL="$TERMUX_POOL/$FILE"
           DEB="/tmp/$(basename "$FILE")"
-          echo "Fetching $pkg → $DEB"
-          curl -sL -o "$DEB" "$URL"
+          echo "Fetching $pkg → $URL"
+          wget -q --timeout=30 -O "$DEB" "$URL" || { echo "FAIL downloading $pkg"; continue; }
           dpkg-deb -x "$DEB" "$SYSROOT"
+          echo "  ✓ extracted $pkg"
         done
 
         echo ""
