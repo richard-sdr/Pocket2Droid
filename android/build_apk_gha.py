@@ -118,6 +118,7 @@ run([str(ZIPALIGN), "-f", "-P", "16", "4", str(unsigned), str(aligned)])
 keystore = Path.home() / ".android/debug.keystore"
 if not keystore.exists():
     print("Generating debug keystore...")
+    keystore.parent.mkdir(parents=True, exist_ok=True)
     run(["keytool", "-genkeypair", "-v", "-keystore", str(keystore),
          "-alias", "androiddebugkey", "-keyalg", "RSA", "-keysize", "2048",
          "-validity", "10000",
