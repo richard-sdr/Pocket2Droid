@@ -105,7 +105,7 @@ class KeyboardTests(DeviceTests):
     def test_keyboard_fn_key_preserves_queue_at_capacity(self):
         """F-key events are single-byte and queue like any other key."""
         self.write(0x59000020, 1 << 5)
-        # Fill to 31, then add f1 鈫�should queue fine
+        # Fill to 31, then add f1 → should queue fine
         for _ in range(31):
             self.key('tab')
         self.key('f1')

@@ -1,6 +1,7 @@
 {
   "revision": "0f23982a1047b1b2d0dcebe7d9d82ac09a29b63f",
   "source": "boards/smdk2410/vktoscan.c + devices.cpp onWMKEY",
+  "note": "f1-f4, f8-f9 use AT standard F-key scancodes (0x3B..0x3E, 0x42, 0x43) directly as single-byte events, instead of Fn+digit three-byte sequences. The guest ScanVK table recognises AT F-key scancodes directly, while Fn scancode 0x63 is not universally supported by WM5 PDDs.",
   "sequences": {
     "0": {"make": [73], "break": [201], "guest_vk": 48},
     "1": {"make": [49], "break": [177], "guest_vk": 49},
