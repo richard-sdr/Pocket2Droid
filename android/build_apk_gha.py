@@ -117,20 +117,20 @@ else:
 
 # Termux dependencies use SONAMEs with version suffixes (e.g. libglib-2.0.so.0).
 # Android's package manager only extracts libraries whose names match lib*.so,
-# so we rename them to NDK-friendly forms and rewrite the engine's DT_NEEDED
-# entries with patchelf.
+# so we rename them to NDK-friendly forms and rewrite DT_NEEDED/SONAME entries
+# with patchelf. The names mirror the upstream release's libp2d_* convention.
 NDK_NAMES = {
-    "libglib-2.0.so.0":   "libglib_2_0.so",
-    "libpixman-1.so.0":   "libpixman_1.so",
-    "libslirp.so.0":      "libslirp.so",
-    "libxml2.so.2":       "libxml2.so",
-    "libxml2.so.16":      "libxml2.so",
-    "libz.so.1":          "libz.so",
-    "libandroid-support.so": "libandroid_support.so",
-    "liblz4.so.1":        "liblz4.so",
-    "libpcre2-8.so.0":    "libpcre2_8.so",
-    "libiconv.so":        "libiconv.so",
-    "libffi.so.8":        "libffi.so",
+    "libglib-2.0.so.0":      "libp2d_glib_2_0.so",
+    "libpixman-1.so.0":      "libp2d_pixman_1.so",
+    "libslirp.so.0":         "libp2d_slirp.so",
+    "libxml2.so.2":          "libp2d_xml2.so",
+    "libxml2.so.16":         "libp2d_xml2.so",
+    "libz.so.1":             "libp2d_z.so",
+    "libandroid-support.so": "libp2d_android_support.so",
+    "liblz4.so.1":           "libp2d_lz4.so",
+    "libpcre2-8.so.0":       "libp2d_pcre2_8.so",
+    "libiconv.so":           "libp2d_iconv.so",
+    "libffi.so.8":           "libp2d_ffi.so",
 }
 
 REQUIRED_KEYS = set(NDK_NAMES) | {
@@ -155,23 +155,26 @@ def readelf_sonames(path):
         print(f"WARN: readelf failed for {path}: {e}", file=sys.stderr)
         return []
 
-def rename_engine_dependencies(engine_path, libdir):
-    """Create a patched engine with NDK-friendly DT_NEEDED names."""
-    needed = readelf_sonames(engine_path)
+def rewrite_so_dependencies(src_path, new_name):
+    """Copy a shared library, rewrite its SONAME and DT_NEEDED to NDK names.
+
+    Returns the path to the rewritten file inside BUILD/.
+    """
+    needed = readelf_sonames(src_path)
     replace_args = []
     for old in needed:
         if old in NDK_NAMES:
             new = NDK_NAMES[old]
             if old != new:
                 replace_args.extend(["--replace-needed", old, new])
-    if not replace_args:
-        return engine_path
-    patched = BUILD / "libp2dengine-patched.so"
-    shutil.copy2(engine_path, patched)
-    cmd = ["patchelf", *replace_args, str(patched)]
-    print("$", " ".join(cmd))
+
+    out = BUILD / new_name
+    shutil.copy2(src_path, out)
+    cmd = ["patchelf", "--set-soname", new_name, *replace_args, str(out)]
+    if replace_args:
+        print("$", " ".join(cmd))
     subprocess.run(cmd, check=True)
-    return patched
+    return out
 
 # Locate Termux sysroot libs and map canonical SONAME -> real file.
 soname_files = {}
@@ -211,8 +214,8 @@ if SYSROOT:
                 soname_files[soname] = so
         break
 
-# Patch engine to reference the NDK-friendly names.
-patched_engine = rename_engine_dependencies(engine, None)
+# Patch engine to reference the NDK-friendly names (engine keeps its own name).
+patched_engine = rewrite_so_dependencies(engine, "libp2dengine.so")
 add_executable_so(unsigned, patched_engine, "lib/arm64-v8a/libp2dengine.so")
 
 # Bundle dependencies under NDK-friendly names so Android extracts them.
@@ -222,8 +225,9 @@ for soname, so in sorted(soname_files.items()):
     if not ndk_name:
         print(f"WARN: no NDK-friendly mapping for {soname}; skipping", file=sys.stderr)
         continue
+    patched = rewrite_so_dependencies(so, ndk_name)
     zip_path = f"lib/arm64-v8a/{ndk_name}"
-    add_executable_so(unsigned, so, zip_path)
+    add_executable_so(unsigned, patched, zip_path)
     bundled += 1
 if bundled:
     print(f"Bundled {bundled} Termux runtime .so files")
