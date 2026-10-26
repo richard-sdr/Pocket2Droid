@@ -17,7 +17,7 @@ ANDROID_HOME = Path(os.environ["ANDROID_HOME"])
 BUILD_TOOLS = max((ANDROID_HOME / "build-tools").iterdir())
 
 ANDROID_JAR = ANDROID_HOME / "platforms/android-36/android.jar"
-D8_JAR = ANDROID_HOME / "cmdline-tools/latest/lib/d8.jar"
+D8_JAR = BUILD_TOOLS / "lib/d8.jar"
 AAPT2 = BUILD_TOOLS / "aapt2"
 ZIPALIGN = BUILD_TOOLS / "zipalign"
 APKSIGNER_JAR = BUILD_TOOLS / "apksigner.jar"
