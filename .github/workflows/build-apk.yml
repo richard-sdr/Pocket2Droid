@@ -246,10 +246,10 @@ jobs:
           --extra-cflags="-I${PREFIX}/include -I${PREFIX}/include/pixman-1 -I${PREFIX}/include/glib-2.0 -I${PREFIX}/lib/glib-2.0/include" \
           --extra-ldflags="-L${PREFIX}/lib -Wl,-z,max-page-size=16384 -Wl,-rpath,\$ORIGIN" \
           --prefix="/data/local/tmp" \
-          build-android 2>&1 | tee "${GITHUB_WORKSPACE}/android/build/configure.log"
+          2>&1 | tee "${GITHUB_WORKSPACE}/android/build/configure.log"
 
         echo "=== configure OK, starting ninja ==="
-        cd build-android
+        cd build
         ninja -j$(nproc) qemu-system-arm 2>&1 | tee "${GITHUB_WORKSPACE}/android/build/ninja.log"
 
         mkdir -p "${GITHUB_WORKSPACE}/android/build"
