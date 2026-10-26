@@ -244,24 +244,17 @@ static void touch_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
         if (((s->spi1[0] >> 5) & 3) != 1) {
             return;
         }
-        /* CE/SMDK2410 keyboard scan codes.
+        /* CE keyboard scan codes, as in Device Emulator's VK-to-SC mapping.
          *
          * Navigation and digits use the SMDK2410 matrix scan codes defined in
-         * Device Emulator's boards/smdk2410/vktoscan.c.
+         * boards/smdk2410/vktoscan.c.
          *
-         * Soft keys use the SMDK2410 matrix scan codes from VKtoSCTable:
-         *   left soft key  -> VK_APP_LAUNCH1 -> scan code 0x64
-         *   right soft key -> VK_APP_LAUNCH2 -> scan code 0x65
-         *
-         * Star/hash keep the SMDK2410 matrix codes that Device Emulator maps
-         * through the Fn modifier (VK_F8 -> '8' / VK_F9 -> '9').  On ROMs where
-         * the Fn scancode is ignored the starred digits leak through, so we try
-         * the direct matrix codes first.
-         *
-         * The original QEMU code sent Fn+digit sequences for F1..F4, but many
-         * WM5 ROMs ignore the Fn scan code (0x63) and saw only the inner digit,
-         * producing "1"/"2".  Sending the direct SMDK2410 soft-key scan codes
-         * avoids the Fn modifier entirely.
+         * Soft keys (F1..F4) and star/hash (F8,F9) use Windows-standard AT
+         * keyboard F-key scan codes (0x3B..0x3E, 0x42, 0x43). The original Device
+         * Emulator host sent these as Fn+digit sequences because the host Windows
+         * keyboard cannot generate F1..F9 as independent SMDK2410 matrix codes —
+         * but the target WM5 guest keyboard PDD is expected to map these raw
+         * AT F-key scancodes to the appropriate soft-key / function behaviour.
          */
         switch (qemu_input_linux_to_qcode(event->key.key)) {
         case Q_KEY_CODE_UP: code = 0x6c; break;
@@ -284,8 +277,8 @@ static void touch_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
         case Q_KEY_CODE_7: code = 0x4f; break;
         case Q_KEY_CODE_8: code = 0x57; break;
         case Q_KEY_CODE_9: code = 0x41; break;
-        case Q_KEY_CODE_F1: code = 0x64; break; /* left soft key  -> VK_APP_LAUNCH1 */
-        case Q_KEY_CODE_F2: code = 0x65; break; /* right soft key -> VK_APP_LAUNCH2 */
+        case Q_KEY_CODE_F1: code = 0x3b; break; /* AT F1 -> left soft key */
+        case Q_KEY_CODE_F2: code = 0x3c; break; /* AT F2 -> right soft key */
         case Q_KEY_CODE_F3: code = 0x3d; break; /* AT scancode F3 -> guest VK_F3 (talk) */
         case Q_KEY_CODE_F4: code = 0x3e; break; /* AT scancode F4 -> guest VK_F4 (end) */
         case Q_KEY_CODE_F8: code = 0x42; break; /* AT scancode F8 -> guest VK_F8 (*) */
