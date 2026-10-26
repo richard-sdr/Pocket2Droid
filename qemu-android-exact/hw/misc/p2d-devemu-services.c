@@ -240,14 +240,24 @@ static void touch_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
 {
     P2DSoc *s = P2D_SOC(dev);
     if (event->type == INPUT_EVENT_KIND_KEY) {
-        unsigned code, count = 1;
-        bool function = false;
+        unsigned code;
         if (((s->spi1[0] >> 5) & 3) != 1) {
             return;
         }
         /* CE keyboard scan codes, as in Device Emulator's VK-to-SC mapping.
-         * SDK phone skins use F1/F2/F3/F4 for soft keys/Talk/End. Those become
-         * Fn + 1/2/3/4, with Fn released after each make OR break event.
+         *
+         * Navigation and digits use the SMDK2410 matrix scan codes defined in
+         * boards/smdk2410/vktoscan.c.
+         *
+         * Soft keys (F1..F4) and star/hash (F8,F9) now use Windows-standard AT
+         * keyboard F-key scan codes (0x3B..0x3E, 0x42, 0x43). The original Device
+         * Emulator host sent these as Fn+digit sequences because the host Windows
+         * keyboard cannot generate F1..F9 as independent SMDK2410 matrix codes —
+         * but Device Emulator's guest SMDK2410 ScanVK table recognises the raw
+         * AT F-key scancodes directly. Routing through the Fn modifier caused
+         * guest keyboards that lack Fn-scancode PDD support (e.g. many WM5 ROMs
+         * that Pocket2Droid ships with) to leak only the inner digit scan and
+         * produce "1"/"2" instead of VK_F1/VK_F2.
          */
         switch (qemu_input_linux_to_qcode(event->key.key)) {
         case Q_KEY_CODE_UP: code = 0x6c; break;
@@ -270,28 +280,18 @@ static void touch_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *even
         case Q_KEY_CODE_7: code = 0x4f; break;
         case Q_KEY_CODE_8: code = 0x57; break;
         case Q_KEY_CODE_9: code = 0x41; break;
-        case Q_KEY_CODE_F1: code = 0x31; function = true; break;
-        case Q_KEY_CODE_F2: code = 0x39; function = true; break;
-        case Q_KEY_CODE_F3: code = 0x2f; function = true; break;
-        case Q_KEY_CODE_F4: code = 0x37; function = true; break;
-        /* SDK Smartphone skins use F8/F9 for star/hash. Preserve the
-         * original emulator's Fn + 8/9 make AND break protocol. */
-        case Q_KEY_CODE_F8: code = 0x57; function = true; break;
-        case Q_KEY_CODE_F9: code = 0x41; function = true; break;
+        case Q_KEY_CODE_F1: code = 0x3b; break; /* AT scancode F1 -> guest VK_F1 (left soft) */
+        case Q_KEY_CODE_F2: code = 0x3c; break; /* AT scancode F2 -> guest VK_F2 (right soft) */
+        case Q_KEY_CODE_F3: code = 0x3d; break; /* AT scancode F3 -> guest VK_F3 (talk) */
+        case Q_KEY_CODE_F4: code = 0x3e; break; /* AT scancode F4 -> guest VK_F4 (end) */
+        case Q_KEY_CODE_F8: code = 0x42; break; /* AT scancode F8 -> guest VK_F8 (*) */
+        case Q_KEY_CODE_F9: code = 0x43; break; /* AT scancode F9 -> guest VK_F9 (#) */
         default: return;
         }
-        count = function ? 3 : 1;
-        /* Admit complete sequences so queue pressure cannot strand Fn down. */
-        if (s->key_count + count <= ARRAY_SIZE(s->keys)) {
+        if (s->key_count + 1 <= ARRAY_SIZE(s->keys)) {
             unsigned tail = (s->key_head + s->key_count) % ARRAY_SIZE(s->keys);
-            if (function) {
-                s->keys[tail] = 0x63;
-                s->keys[(tail + 1) % ARRAY_SIZE(s->keys)] = code | (event->key.down ? 0 : 0x80);
-                s->keys[(tail + 2) % ARRAY_SIZE(s->keys)] = 0xe3;
-            } else {
-                s->keys[tail] = code | (event->key.down ? 0 : 0x80);
-            }
-            s->key_count += count;
+            s->keys[tail] = code | (event->key.down ? 0 : 0x80);
+            s->key_count++;
             intc_update(s);
         }
         return;
