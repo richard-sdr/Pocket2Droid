@@ -109,7 +109,7 @@ jobs:
         mkdir -p "$SYSROOT"
         echo "SYSROOT=$SYSROOT" >> $GITHUB_ENV
 
-        TERMUX_POOL="https://packages.termux.dev/apt/termux-main/pool/main"
+        TERMUX_POOL="https://packages.termux.dev/apt/termux-main"
 
         echo "=== Fetching Termux package index ==="
         for i in 1 2 3; do
