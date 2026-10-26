@@ -119,24 +119,37 @@ else:
 # Android's package manager only extracts libraries whose names match lib*.so,
 # so we rename them to NDK-friendly forms and rewrite DT_NEEDED/SONAME entries
 # with patchelf. The names mirror the upstream release's libp2d_* convention.
+# Map from original SONAME/symlink-name -> NDK-friendly APK filename.
+# We include both versioned and unversioned names because Termux packages
+# expose libraries as symlinks, and the linker may record either form as
+# DT_NEEDED depending on which symlink was used at link time.
 NDK_NAMES = {
     "libglib-2.0.so.0":      "libp2d_glib_2_0.so",
+    "libglib-2.0.so":        "libp2d_glib_2_0.so",
     "libpixman-1.so.0":      "libp2d_pixman_1.so",
+    "libpixman-1.so":        "libp2d_pixman_1.so",
     "libslirp.so.0":         "libp2d_slirp.so",
+    "libslirp.so":           "libp2d_slirp.so",
     "libxml2.so.2":          "libp2d_xml2.so",
     "libxml2.so.16":         "libp2d_xml2.so",
+    "libxml2.so":            "libp2d_xml2.so",
     "libz.so.1":             "libp2d_z.so",
+    "libz.so":               "libp2d_z.so",
     "libandroid-support.so": "libp2d_android_support.so",
     "liblz4.so.1":           "libp2d_lz4.so",
+    "liblz4.so":             "libp2d_lz4.so",
     "libpcre2-8.so.0":       "libp2d_pcre2_8.so",
+    "libpcre2-8.so":         "libp2d_pcre2_8.so",
     "libiconv.so":           "libp2d_iconv.so",
     "libffi.so.8":           "libp2d_ffi.so",
+    "libffi.so":             "libp2d_ffi.so",
 }
 
-REQUIRED_KEYS = set(NDK_NAMES) | {
-    "libpixman-1.so", "libslirp.so", "libxml2.so", "libpcre2-8.so",
-    "libiconv.so", "libffi.so", "liblz4.so", "libz.so",
-    "libandroid-support.so",
+# Keywords used to filter the sysroot for libraries we care about.
+REQUIRED_KEYS = {
+    "libglib", "libpixman", "libslirp", "libxml2",
+    "libiconv", "libffi", "liblz4", "libpcre",
+    "libz", "libandroid-support",
 }
 
 def readelf_sonames(path):
@@ -204,7 +217,7 @@ if SYSROOT:
                 pass
             return None
 
-        for so in libdir.glob("*.so*"):
+        for so in sorted(libdir.glob("*.so*")):
             if so.is_symlink():
                 continue
             if "libp2dengine" in so.name:
@@ -212,6 +225,12 @@ if SYSROOT:
             if not any(k in so.name for k in REQUIRED_KEYS):
                 continue
             soname = soname_of(so)
+            # Fallback: if readelf is missing, derive a canonical name from
+            # the filename by stripping the last version component.
+            if not soname:
+                soname = so.name
+                if ".so." in soname:
+                    soname = soname.rsplit(".", 1)[0] + ".so"
             if not soname:
                 continue
             existing = soname_files.get(soname)
