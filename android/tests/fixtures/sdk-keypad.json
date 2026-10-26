@@ -12,7 +12,11 @@
     "7": {"make": [79], "break": [207], "guest_vk": 55},
     "8": {"make": [87], "break": [215], "guest_vk": 56},
     "9": {"make": [65], "break": [193], "guest_vk": 57},
-    "f8": {"make": [99,87,227], "break": [99,215,227], "guest_vk": 119},
-    "f9": {"make": [99,65,227], "break": [99,193,227], "guest_vk": 120}
+    "f1": {"make": [59], "break": [187], "guest_vk": 112},
+    "f2": {"make": [60], "break": [188], "guest_vk": 113},
+    "f3": {"make": [61], "break": [189], "guest_vk": 114},
+    "f4": {"make": [62], "break": [190], "guest_vk": 115},
+    "f8": {"make": [66], "break": [194], "guest_vk": 119},
+    "f9": {"make": [67], "break": [195], "guest_vk": 120}
   }
 }
