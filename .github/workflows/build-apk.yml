@@ -128,7 +128,7 @@ jobs:
         # the whole step. We only fail at the very end if we got nothing.
         set +eo pipefail
 
-        PACKAGES=(glib libpixman libslirp libxml2 libiconv libffi liblz4)
+        PACKAGES=(glib libpixman libslirp libxml2 libiconv libffi liblz4 pcre2 zlib)
         extracted=0
         for pkg in "${PACKAGES[@]}"; do
           echo "--- $pkg ---"
@@ -179,34 +179,55 @@ jobs:
         set -euo pipefail
         NDK="${{ env.NDK_HOME }}"
         SYSROOT="${{ env.SYSROOT }}"
+        TOOLBIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        export PATH="$TOOLBIN:$PATH"
 
-        # Put NDK llvm toolchain on PATH so configure's --cross-prefix=llvm-
-        # can find llvm-ar, llvm-strip, llvm-objcopy, etc.
-        export PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
         echo "llvm-ar:      $(command -v llvm-ar || echo NOT FOUND)"
         echo "llvm-strip:   $(command -v llvm-strip || echo NOT FOUND)"
-        echo "llvm-objcopy: $(command -v llvm-objcopy || echo NOT FOUND)"
 
-        CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-        CXX="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
+        CC="$TOOLBIN/aarch64-linux-android24-clang"
+        CXX="$TOOLBIN/aarch64-linux-android24-clang++"
+        AR="$TOOLBIN/llvm-ar"
+        STRIP="$TOOLBIN/llvm-strip"
+        OBJCOPY="$TOOLBIN/llvm-objcopy"
 
         cd "${GITHUB_WORKSPACE}/qemu-android-exact"
 
         PREFIX="$SYSROOT/data/data/com.termux/files/usr"
         if [ ! -d "$PREFIX" ]; then
-          PREFIX="$SYSROOT"
+          echo "ERROR: Termux sysroot not at $PREFIX"
+          echo "ls of $SYSROOT:"; ls "$SYSROOT"
+          exit 1
         fi
         echo "Using prefix: $PREFIX"
         ls "$PREFIX/include/glib-2.0/glib.h"
         ls "$PREFIX/include/pixman-1/pixman.h"
+        ls "$PREFIX/lib/pkgconfig/glib-2.0.pc"
+
+        # pkg-config setup: Termux .pc files have prefix=/data/data/com.termux/files/usr
+        # which is the Android runtime path. PKG_CONFIG_SYSROOT_DIR remaps that
+        # absolute prefix back into our extracted sysroot on the CI filesystem.
+        export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+        export PKG_CONFIG_SYSROOT_DIR="$SYSROOT"
+        export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
+
+        # Verify pkg-config can resolve glib-2.0
+        echo "=== pkg-config test ==="
+        PKGCONFIG=/usr/bin/pkg-config
+        $PKGCONFIG --libs glib-2.0 2>&1 || echo "WARN: pkg-config glib-2.0 failed"
+        $PKGCONFIG --cflags glib-2.0 2>&1 || echo "WARN: pkg-config glib-2.0 failed"
 
         rm -rf build-android
 
+        # NO --cross-prefix=llvm- — that makes meson rename pkg-config to
+        # 'llvm-pkg-config' (which NDK doesn't ship). Instead we pass the
+        # binutils tools explicitly via env vars so meson sees them directly.
+        AR="$AR" STRIP="$STRIP" OBJCOPY="$OBJCOPY" \
         ./configure \
           --target-list=arm-softmmu \
           --with-devices-arm=p2d \
           --cc="$CC" --cxx="$CXX" \
-          --host-cc=gcc --cross-prefix="llvm-" \
+          --host-cc=gcc \
           --cpu=aarch64 \
           --disable-werror \
           --without-default-features \
