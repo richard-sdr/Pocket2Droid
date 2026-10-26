@@ -207,7 +207,9 @@ if SYSROOT:
 
 # --- 6. zipalign ---
 aligned = BUILD / "Pocket2Droid-ALIGNED.apk"
-run([str(ZIPALIGN), "-f", "-P", "16", "4", str(unsigned), str(aligned)])
+# -p is required: page-aligns .so files to 4 KiB, otherwise Android refuses to
+# load native libraries directly from the APK (extractNativeLibs=true).
+run([str(ZIPALIGN), "-f", "-p", "4", str(unsigned), str(aligned)])
 
 # --- 7. Debug-sign ---
 keystore = Path.home() / ".android/debug.keystore"
