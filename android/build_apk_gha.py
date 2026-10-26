@@ -69,6 +69,28 @@ shutil.copy2(linked, unsigned)
 with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
     z.write(dex_out / "classes.dex", "classes.dex")
 
+    # License / attribution assets (mirrors upstream release packaging)
+    qemu_copying = HERE.parent / "qemu-android-exact/COPYING"
+    if qemu_copying.exists():
+        z.write(qemu_copying, "assets/QEMU-COPYING.txt")
+
+    libslirp_notice = HERE / "patches/LIBSLIRP-NOTICE.txt"
+    if libslirp_notice.exists():
+        z.write(libslirp_notice, "assets/LIBSLIRP-NOTICE.txt")
+        # The slirp COPYING comes from the slirp source tree; stub it if absent.
+        slirp_copying = HERE.parent / "qemu-android-exact/subprojects/libslirp/COPYRIGHT"
+        if slirp_copying.exists():
+            z.write(slirp_copying, "assets/LIBSLIRP-COPYRIGHT.txt")
+        else:
+            z.writestr("assets/LIBSLIRP-COPYRIGHT.txt",
+                       "libslirp - Copyright (c) 2004-2021 the QEMU team\n")
+
+    # Guest-side network setup helper (pre-built in repo)
+    net_setup_dir = HERE / "build/network-setup/production-helper"
+    if (net_setup_dir / "autorun.exe").exists() and (net_setup_dir / "manifest.json").exists():
+        z.write(net_setup_dir / "autorun.exe", "assets/network-setup/autorun.exe")
+        z.write(net_setup_dir / "manifest.json", "assets/network-setup/manifest.json")
+
 # Main engine SO (QEMU arm64)
 engine = BUILD / "libp2dengine.so"
 if not engine.exists():
@@ -89,6 +111,27 @@ else:
 
 # If we have Termux-sysroot .so files, bundle them too.
 # The Android linker needs them at runtime if QEMU was dynamically linked.
+# We install each real library under its SONAME so the dynamic linker finds it.
+SONAME_KEEP = [
+    "libglib", "libpixman", "libslirp", "libxml2",
+    "libiconv", "libffi", "liblz4", "libpcre",
+    "libz", "libandroid-support", "libdl", "liblog",
+]
+
+def soname_of(path):
+    try:
+        out = subprocess.check_output(["readelf", "-d", str(path)], text=True)
+        for line in out.splitlines():
+            if "SONAME" in line:
+                # line looks like: 0x000000000000000e (SONAME) Library soname: [libfoo.so.0]
+                start = line.find("[")
+                end = line.find("]", start)
+                if start != -1 and end != -1:
+                    return line[start + 1:end]
+    except Exception:
+        pass
+    return None
+
 if SYSROOT:
     for termux_usr in [SYSROOT / "data/data/com.termux/files/usr", SYSROOT]:
         if not termux_usr.is_dir():
@@ -96,27 +139,34 @@ if SYSROOT:
         libdir = termux_usr / "lib"
         if not libdir.is_dir():
             continue
+
+        # Collect real files only; skip symlinks. Map SONAME -> best real file.
+        soname_files = {}
+        for so in libdir.glob("*.so*"):
+            if so.is_symlink():
+                continue
+            if "libp2dengine" in so.name:
+                continue
+            if not any(k in so.name for k in SONAME_KEEP):
+                continue
+            soname = soname_of(so) or so.name
+            # Prefer the most version-specific real file for a given SONAME.
+            existing = soname_files.get(soname)
+            if existing is None or len(so.name) > len(existing.name):
+                soname_files[soname] = so
+
         bundled = 0
-        for so in sorted(libdir.glob("*.so*")):
-            name = so.name
-            if "libp2dengine" in name:
-                continue
-            # Only the ones we actually need — glib/pixman/slirp + their deps
-            keep = any(k in name for k in [
-                "libglib", "libpixman", "libslirp", "libxml2",
-                "libiconv", "libffi", "liblz4", "libpcre",
-                "libz", "libdl", "liblog",
-            ])
-            if not keep:
-                continue
-            zip_path = f"lib/arm64-v8a/{name}"
-            with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
-                # Skip if already inside
-                if zip_path not in z.namelist():
-                    z.write(so, zip_path)
-                    bundled += 1
+        with zipfile.ZipFile(unsigned, "a", zipfile.ZIP_STORED) as z:
+            existing_names = set(z.namelist())
+            for soname, so in sorted(soname_files.items()):
+                zip_path = f"lib/arm64-v8a/{soname}"
+                if zip_path in existing_names:
+                    continue
+                z.write(so, zip_path)
+                bundled += 1
         if bundled:
             print(f"Bundled {bundled} Termux runtime .so files from {libdir}")
+            print("   " + " ".join(sorted(soname_files.keys())))
         break
 
 # --- 6. zipalign ---
